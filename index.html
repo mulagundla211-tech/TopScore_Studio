@@ -12,13 +12,14 @@
         body { font-family: 'Inter', sans-serif; margin: 0; padding: 0; }
         #bootstrap-error { 
             display: none; 
-            padding: 20px; 
-            background: #fef2f2; 
-            color: #991b1b; 
-            border: 1px solid #fee2e2; 
+            padding: 24px; 
+            background: #fff1f2; 
+            color: #9f1239; 
+            border: 1px solid #fda4af; 
             margin: 20px; 
-            border-radius: 8px; 
-            font-family: sans-serif; 
+            border-radius: 12px; 
+            font-family: ui-sans-serif, system-ui, sans-serif;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
         }
     </style>
 <script type="importmap">
@@ -28,29 +29,42 @@
     "react-dom": "https://esm.sh/react-dom@19.0.0",
     "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
     "@google/genai": "https://esm.sh/@google/genai",
-    "react/": "https://esm.sh/react@^19.2.4/",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.4/"
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "react/": "https://esm.sh/react@^19.2.4/"
   }
 }
 </script>
 <script>
-    // Global error handler to catch boot-up issues
-    window.onerror = function(msg, url, lineNo, columnNo, error) {
-        var errorDiv = document.getElementById('bootstrap-error');
-        if (errorDiv) {
-            errorDiv.style.display = 'block';
-            errorDiv.innerHTML = '<strong>Application Error:</strong> ' + msg + '<br><small>' + url + ' L:' + lineNo + '</small>';
+    window.onerror = function(msg, url, line, col, error) {
+        var div = document.getElementById('bootstrap-error');
+        if (div) {
+            div.style.display = 'block';
+            div.innerHTML = '<h3 style="margin-top:0;font-weight:700">Boot Error</h3>' +
+                            '<p style="margin-bottom:4px">' + msg + '</p>' +
+                            '<code style="font-size:11px;opacity:0.7">' + url + ' (Line ' + line + ')</code>';
         }
         return false;
     };
+
+    // Fail-safe: if still initializing after 8 seconds, show help
+    setTimeout(function() {
+        if (document.getElementById('root').innerHTML.indexOf('Initializing') !== -1) {
+            var div = document.getElementById('bootstrap-error');
+            div.style.display = 'block';
+            div.innerHTML = '<h3 style="margin-top:0;font-weight:700">Taking too long?</h3>' +
+                            '<p>The dashboard is having trouble starting. This usually means a file could not be found or the Google Sheet URLs are blocked by your browser settings.</p>' +
+                            '<button onclick="window.location.reload()" style="background:#e11d48;color:white;border:none;padding:8px 16px;border-radius:6px;font-weight:bold;cursor:pointer">Retry Connection</button>';
+        }
+    }, 8000);
 </script>
 </head>
 <body class="bg-slate-50 text-slate-900">
     <div id="bootstrap-error"></div>
     <div id="root">
-        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; color: #64748b;">
-            <div style="width: 40px; height: 40px; border: 3px solid #e2e8f0; border-top-color: #4f46e5; border-radius: 50%; animation: spin 1s linear infinite;"></div>
-            <p style="margin-top: 16px; font-weight: 600; font-family: sans-serif;">Initializing Dashboard...</p>
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; color: #64748b; background: #f8fafc;">
+            <div style="width: 48px; height: 48px; border: 4px solid #e2e8f0; border-top-color: #4f46e5; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+            <p style="margin-top: 20px; font-weight: 700; font-family: sans-serif; letter-spacing: -0.01em; color: #1e293b;">Synchronizing Inventory...</p>
+            <p style="margin-top: 8px; font-size: 13px; color: #94a3b8; font-family: sans-serif;">Establishing secure connection to Google Sheets</p>
         </div>
     </div>
     <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
