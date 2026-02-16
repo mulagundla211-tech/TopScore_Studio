@@ -1,11 +1,10 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { GOOGLE_SHEET_CONFIG } from './config.ts';
-import { Filters, GroupedInventory, InventoryItem } from './types.ts';
-import { MOCK_INVENTORY_DATA } from './constants.ts';
-import FilterBar from './components/FilterBar.tsx';
-import InventoryTile from './components/InventoryTile.tsx';
+import { GOOGLE_SHEET_CONFIG } from './config';
+import { Filters, GroupedInventory, InventoryItem } from './types';
+import { MOCK_INVENTORY_DATA } from './constants';
+import FilterBar from './components/FilterBar';
+import InventoryTile from './components/InventoryTile';
 
-// Robust CSV parser that handles quotes and multiple line-ending types
 const parseCSV = (csvText: string): any[] => {
   const cleanText = csvText.replace(/^\uFEFF/, '').trim();
   if (!cleanText) return [];
@@ -59,7 +58,6 @@ const parseCSV = (csvText: string): any[] => {
   });
 };
 
-// Helper for fuzzy key matching in CSV objects
 const getVal = (row: any, keys: string[]): string => {
   for (const k of keys) {
     if (row[k] !== undefined && row[k] !== null && row[k] !== "") return row[k];
@@ -88,14 +86,12 @@ const App: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      // Fetch Inventory Data
       const invResponse = await fetch(GOOGLE_SHEET_CONFIG.INVENTORY_DATA_URL);
-      if (!invResponse.ok) throw new Error(`Inventory sheet access denied (${invResponse.status})`);
+      if (!invResponse.ok) throw new Error(`Could not access Inventory Sheet (Status ${invResponse.status})`);
       const invText = await invResponse.text();
       
-      // Basic check for HTML response (happens when sharing isn't right)
       if (invText.trim().toLowerCase().startsWith('<!doctype html')) {
-        throw new Error("Sheet returned HTML instead of CSV. Ensure it's 'Published to Web' as CSV.");
+        throw new Error("The Sheet URL returned a login page. Please ensure it is 'Published to the Web' as a CSV.");
       }
 
       const rawInv = parseCSV(invText);
@@ -117,7 +113,6 @@ const App: React.FC = () => {
         };
       });
 
-      // Fetch Master Details for filters
       let masterData: {Category: string, SubCategory: string}[] = [];
       try {
         const masterResponse = await fetch(GOOGLE_SHEET_CONFIG.MASTER_DETAILS_URL);
@@ -131,18 +126,18 @@ const App: React.FC = () => {
           }
         }
       } catch (e) {
-        console.warn("Master sheet could not be loaded, using inventory for filters.");
+        console.warn("Master sheet could not be loaded.");
       }
 
       setInventory(mappedInv.length > 0 ? mappedInv : MOCK_INVENTORY_DATA);
       setMasterCategories(masterData);
       
       if (mappedInv.length === 0 && masterData.length === 0) {
-        setError("Connection successful, but no data was found in your sheets.");
+        setError("Spreadsheet connected but no valid rows found.");
       }
     } catch (err: any) {
       console.error(err);
-      setError(`Sync Error: ${err.message}. Showing Demo Data.`);
+      setError(`Notice: ${err.message}. Displaying Demo Data for now.`);
       setInventory(MOCK_INVENTORY_DATA);
     } finally {
       setLoading(false);
@@ -205,35 +200,35 @@ const App: React.FC = () => {
         <header className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-3 mb-2">
-              <div className="bg-indigo-600 p-2 rounded-lg shadow-lg shadow-indigo-200">
+              <div className="bg-indigo-600 p-2 rounded-lg shadow-lg">
                 <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                 </svg>
               </div>
               <h1 className="text-3xl font-black text-slate-800 tracking-tight">TopScore Inventory</h1>
             </div>
-            <p className="text-slate-500 font-medium">Monitoring stock levels across grades and subjects.</p>
+            <p className="text-slate-500 font-medium">Real-time stock management dashboard.</p>
           </div>
           
           <button 
             onClick={fetchData}
             disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all active:scale-95 disabled:opacity-50"
+            className="flex items-center gap-2 px-6 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all active:scale-95 disabled:opacity-50"
           >
             <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            Refresh Data
+            Sync Now
           </button>
         </header>
 
         {error && (
           <div className="mb-8 p-4 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-2xl flex items-start gap-3">
-            <svg className="w-5 h-5 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <div>
-              <p className="font-bold">System Status</p>
+              <p className="font-bold">Sync Notice</p>
               <p>{error}</p>
             </div>
           </div>
@@ -248,8 +243,8 @@ const App: React.FC = () => {
 
         {loading ? (
           <div className="flex flex-col items-center justify-center py-32">
-            <div className="w-12 h-12 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
-            <p className="text-slate-400 font-bold tracking-widest uppercase text-xs">Synchronizing with Sheets...</p>
+            <div className="w-12 h-12 border-4 border-slate-200 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
+            <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Loading...</p>
           </div>
         ) : filteredAndGrouped.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -258,20 +253,9 @@ const App: React.FC = () => {
             ))}
           </div>
         ) : (
-          <div className="bg-white rounded-3xl p-20 text-center border-2 border-dashed border-slate-200">
-             <div className="bg-slate-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
-                <svg className="w-10 h-10 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-                </svg>
-             </div>
-             <h2 className="text-2xl font-bold text-slate-800 mb-2">No Records Displayed</h2>
-             <p className="text-slate-500 max-w-sm mx-auto">Adjust your filters or verify the Category/Sub Category columns in your spreadsheet.</p>
-             <button 
-               onClick={() => setFilters({categories:[], subCategories:[]})}
-               className="mt-8 px-6 py-2 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition-colors"
-             >
-               Clear Filters
-             </button>
+          <div className="bg-white rounded-3xl p-20 text-center border border-slate-200">
+             <h2 className="text-2xl font-bold text-slate-800 mb-2">No Records</h2>
+             <p className="text-slate-500">Check your filters or the source spreadsheet.</p>
           </div>
         )}
       </div>
