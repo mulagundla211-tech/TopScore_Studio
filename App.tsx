@@ -1,9 +1,11 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { GOOGLE_SHEET_CONFIG } from './config';
-import { Filters, GroupedInventory, InventoryItem } from './types';
-import { MOCK_INVENTORY_DATA } from './constants';
-import FilterBar from './components/FilterBar';
-import InventoryTile from './components/InventoryTile';
+import { GOOGLE_SHEET_CONFIG } from './config.ts';
+import { Filters, GroupedInventory, InventoryItem } from './types.ts';
+import { MOCK_INVENTORY_DATA } from './constants.ts';
+import FilterBar from './components/FilterBar.tsx';
+import InventoryTile from './components/InventoryTile.tsx';
+
+console.log("App.tsx: Module loaded.");
 
 const parseCSV = (csvText: string): any[] => {
   const cleanText = csvText.replace(/^\uFEFF/, '').trim();
@@ -82,16 +84,17 @@ const App: React.FC = () => {
   });
 
   const fetchData = useCallback(async () => {
+    console.log("App: Starting data fetch...");
     try {
       setLoading(true);
       setError(null);
 
       const invResponse = await fetch(GOOGLE_SHEET_CONFIG.INVENTORY_DATA_URL);
-      if (!invResponse.ok) throw new Error(`Could not access Inventory Sheet (Status ${invResponse.status})`);
+      if (!invResponse.ok) throw new Error(`HTTP ${invResponse.status}`);
       const invText = await invResponse.text();
       
       if (invText.trim().toLowerCase().startsWith('<!doctype html')) {
-        throw new Error("The Sheet URL returned a login page. Please ensure it is 'Published to the Web' as a CSV.");
+        throw new Error("Published URL is restricted. Ensure 'Publish to Web' as CSV is active.");
       }
 
       const rawInv = parseCSV(invText);
@@ -126,18 +129,15 @@ const App: React.FC = () => {
           }
         }
       } catch (e) {
-        console.warn("Master sheet could not be loaded.");
+        console.warn("Master sheet skip.");
       }
 
       setInventory(mappedInv.length > 0 ? mappedInv : MOCK_INVENTORY_DATA);
       setMasterCategories(masterData);
-      
-      if (mappedInv.length === 0 && masterData.length === 0) {
-        setError("Spreadsheet connected but no valid rows found.");
-      }
+      console.log("App: Data sync complete.");
     } catch (err: any) {
-      console.error(err);
-      setError(`Notice: ${err.message}. Displaying Demo Data for now.`);
+      console.error("App: Sync Error", err);
+      setError(`Sync Notice: ${err.message}. Using demo data.`);
       setInventory(MOCK_INVENTORY_DATA);
     } finally {
       setLoading(false);
@@ -207,7 +207,7 @@ const App: React.FC = () => {
               </div>
               <h1 className="text-3xl font-black text-slate-800 tracking-tight">TopScore Inventory</h1>
             </div>
-            <p className="text-slate-500 font-medium">Real-time stock management dashboard.</p>
+            <p className="text-slate-500 font-medium">Cloud-synced inventory tracking.</p>
           </div>
           
           <button 
