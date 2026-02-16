@@ -43,7 +43,7 @@
             div.style.display = 'block';
             div.innerHTML = '<h3 style="margin-top:0;font-weight:700">Module Loading Error</h3>' +
                             '<p style="margin-bottom:8px">' + msg + '</p>' +
-                            '<p style="font-size:12px; color: #666;">This usually means the server is blocking .tsx files. We have included a <strong>_headers</strong> file to fix this on Netlify. Please ensure it is in your project root.</p>';
+                            '<p style="font-size:12px; color: #666;">If you still see the MIME type error, ensure the <strong>_headers</strong> file is present in your project root.</p>';
         }
         return false;
     };
