@@ -35,15 +35,15 @@
 }
 </script>
 <script>
-    console.log("HTML: Head scripts initialized.");
+    console.log("HTML: System initializing...");
     window.onerror = function(msg, url, line, col, error) {
-        console.error("BOOTSTRAP ERROR:", msg, "at", url, ":", line);
+        console.error("BOOTSTRAP ERROR:", msg);
         var div = document.getElementById('bootstrap-error');
         if (div) {
             div.style.display = 'block';
-            div.innerHTML = '<h3 style="margin-top:0;font-weight:700">Connection Error</h3>' +
-                            '<p style="margin-bottom:4px">' + msg + '</p>' +
-                            '<code style="font-size:11px;opacity:0.7">' + url + ' (Line ' + line + ')</code>';
+            div.innerHTML = '<h3 style="margin-top:0;font-weight:700">Module Loading Error</h3>' +
+                            '<p style="margin-bottom:8px">' + msg + '</p>' +
+                            '<p style="font-size:12px; color: #666;">This usually means the server is blocking .tsx files. We have included a <strong>_headers</strong> file to fix this on Netlify. Please ensure it is in your project root.</p>';
         }
         return false;
     };
