@@ -1,10 +1,9 @@
-
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { GOOGLE_SHEET_CONFIG } from './config';
-import { Filters, GroupedInventory, InventoryItem } from './types';
-import { MOCK_INVENTORY_DATA } from './constants';
-import FilterBar from './components/FilterBar';
-import InventoryTile from './components/InventoryTile';
+import { GOOGLE_SHEET_CONFIG } from './config.ts';
+import { Filters, GroupedInventory, InventoryItem } from './types.ts';
+import { MOCK_INVENTORY_DATA } from './constants.ts';
+import FilterBar from './components/FilterBar.tsx';
+import InventoryTile from './components/InventoryTile.tsx';
 
 // Robust CSV parser that handles quotes and multiple line-ending types
 const parseCSV = (csvText: string): any[] => {
@@ -63,14 +62,13 @@ const parseCSV = (csvText: string): any[] => {
 // Helper for fuzzy key matching in CSV objects
 const getVal = (row: any, keys: string[]): string => {
   for (const k of keys) {
-    if (row[k] !== undefined) return row[k];
-    // Try lowercase and space-stripped versions
+    if (row[k] !== undefined && row[k] !== null && row[k] !== "") return row[k];
     const normalizedK = k.toLowerCase().replace(/[\s\._]/g, '');
     const foundKey = Object.keys(row).find(actualKey => {
       const normalizedActual = actualKey.toLowerCase().replace(/[\s\._]/g, '');
       return normalizedActual === normalizedK;
     });
-    if (foundKey) return row[foundKey];
+    if (foundKey && row[foundKey] !== undefined && row[foundKey] !== null && row[foundKey] !== "") return row[foundKey];
   }
   return "";
 };
@@ -94,20 +92,30 @@ const App: React.FC = () => {
       const invResponse = await fetch(GOOGLE_SHEET_CONFIG.INVENTORY_DATA_URL);
       if (!invResponse.ok) throw new Error(`Inventory sheet access denied (${invResponse.status})`);
       const invText = await invResponse.text();
-      const rawInv = parseCSV(invText);
+      
+      // Basic check for HTML response (happens when sharing isn't right)
+      if (invText.trim().toLowerCase().startsWith('<!doctype html')) {
+        throw new Error("Sheet returned HTML instead of CSV. Ensure it's 'Published to Web' as CSV.");
+      }
 
-      const mappedInv: InventoryItem[] = rawInv.map(row => ({
-        Date: getVal(row, ['Date']),
-        ModelYear: parseInt(getVal(row, ['Model Year', 'ModelYear']) || '0'),
-        Category: getVal(row, ['Category', 'Cat']) || 'Uncategorized',
-        SubCategory: getVal(row, ['Sub Category', 'SubCategory']) || 'General',
-        Grade: getVal(row, ['Grade', 'Class']),
-        Subject: getVal(row, ['Subject', 'Sub']),
-        NoOfSets: parseInt(getVal(row, ['No. of sets', 'NoOfSets', 'Count']) || '0'),
-        Type: (getVal(row, ['Type']) || 'IN').toUpperCase() as any,
-        Description: getVal(row, ['Description', 'Note']),
-        Count: parseInt(getVal(row, ['Count', 'Total', 'No. of sets']) || '0')
-      }));
+      const rawInv = parseCSV(invText);
+      const mappedInv: InventoryItem[] = rawInv.map(row => {
+        const typeRaw = getVal(row, ['Type', 'In/Out', 'Movement']) || 'IN';
+        const typeNormalized = typeRaw.toUpperCase().includes('OUT') ? 'OUT' : 'IN';
+        
+        return {
+          Date: getVal(row, ['Date', 'EntryDate']),
+          ModelYear: parseInt(getVal(row, ['Model Year', 'ModelYear', 'Year']) || '0'),
+          Category: getVal(row, ['Category', 'Cat', 'Genre']) || 'Uncategorized',
+          SubCategory: getVal(row, ['Sub Category', 'SubCategory', 'Sub']) || 'General',
+          Grade: getVal(row, ['Grade', 'Class', 'Level']),
+          Subject: getVal(row, ['Subject', 'Sub', 'Title', 'Topic']),
+          NoOfSets: parseInt(getVal(row, ['No. of sets', 'NoOfSets', 'Count', 'Qty']) || '0'),
+          Type: typeNormalized as 'IN' | 'OUT',
+          Description: getVal(row, ['Description', 'Note', 'Comment']),
+          Count: parseInt(getVal(row, ['Count', 'Total', 'Qty', 'No. of sets']) || '0')
+        };
+      });
 
       // Fetch Master Details for filters
       let masterData: {Category: string, SubCategory: string}[] = [];
@@ -115,10 +123,12 @@ const App: React.FC = () => {
         const masterResponse = await fetch(GOOGLE_SHEET_CONFIG.MASTER_DETAILS_URL);
         if (masterResponse.ok) {
           const masterText = await masterResponse.text();
-          masterData = parseCSV(masterText).map(row => ({
-            Category: getVal(row, ['Category', 'Cat']),
-            SubCategory: getVal(row, ['Sub Category', 'SubCategory'])
-          })).filter(item => item.Category);
+          if (!masterText.trim().toLowerCase().startsWith('<!doctype html')) {
+            masterData = parseCSV(masterText).map(row => ({
+              Category: getVal(row, ['Category', 'Cat']),
+              SubCategory: getVal(row, ['Sub Category', 'SubCategory'])
+            })).filter(item => item.Category);
+          }
         }
       } catch (e) {
         console.warn("Master sheet could not be loaded, using inventory for filters.");
@@ -144,7 +154,6 @@ const App: React.FC = () => {
   }, [fetchData]);
 
   const allCategories = useMemo(() => {
-    // Combine categories from both inventory and master sheet
     const cats = new Set([
       ...inventory.map(i => i.Category),
       ...masterCategories.map(m => m.Category)
@@ -187,7 +196,7 @@ const App: React.FC = () => {
       groups[groupKey].subjects[item.Subject] = (groups[groupKey].subjects[item.Subject] || 0) + change;
     });
 
-    return Object.values(groups).sort((a, b) => String(a.grade).localeCompare(String(b.grade)));
+    return Object.values(groups).sort((a, b) => String(a.grade).localeCompare(String(b.grade), undefined, { numeric: true }));
   }, [inventory, filters]);
 
   return (
