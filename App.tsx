@@ -1,14 +1,14 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { GOOGLE_SHEET_CONFIG } from './config';
 import { Filters, GroupedInventory, InventoryItem } from './types';
 import { MOCK_INVENTORY_DATA } from './constants';
 import FilterBar from './components/FilterBar';
 import InventoryTile from './components/InventoryTile';
 
-// Completed parseCSV function to handle CSV processing from Google Sheets
+// Robust CSV parser that handles quotes and multiple line-ending types
 const parseCSV = (csvText: string): any[] => {
-  const cleanText = csvText.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+  const cleanText = csvText.replace(/^\uFEFF/, '').trim();
   if (!cleanText) return [];
   
   const rows: string[] = [];
@@ -18,9 +18,10 @@ const parseCSV = (csvText: string): any[] => {
   for (let i = 0; i < cleanText.length; i++) {
     const char = cleanText[i];
     if (char === '"') inQuotes = !inQuotes;
-    if (char === '\n' && !inQuotes) {
-      if (currentRow.trim() || rows.length === 0) rows.push(currentRow);
+    if ((char === '\n' || char === '\r') && !inQuotes) {
+      if (currentRow.trim()) rows.push(currentRow);
       currentRow = "";
+      if (char === '\r' && cleanText[i+1] === '\n') i++;
     } else {
       currentRow += char;
     }
@@ -47,26 +48,36 @@ const parseCSV = (csvText: string): any[] => {
     return fields;
   };
 
-  const headers = splitFields(rows[0]).map(h => h.replace(/^"|"$/g, '').trim());
+  const rawHeaders = splitFields(rows[0]).map(h => h.replace(/^"|"$/g, '').trim());
   
   return rows.slice(1).map(row => {
     const values = splitFields(row);
     const obj: any = {};
-    headers.forEach((header, i) => {
-      const val = values[i] ? values[i].replace(/^"|"$/g, '').trim() : '';
-      // Try to parse as number if it looks like one, but keep identifiers as strings
-      if (val !== '' && !isNaN(Number(val)) && !['Date', 'Category', 'SubCategory', 'Grade', 'Subject', 'Type', 'Description'].includes(header)) {
-        obj[header] = Number(val);
-      } else {
-        obj[header] = val;
-      }
+    rawHeaders.forEach((header, i) => {
+      obj[header] = values[i] ? values[i].replace(/^"|"$/g, '').trim() : "";
     });
     return obj;
   });
 };
 
+// Helper for fuzzy key matching in CSV objects
+const getVal = (row: any, keys: string[]): string => {
+  for (const k of keys) {
+    if (row[k] !== undefined) return row[k];
+    // Try lowercase and space-stripped versions
+    const normalizedK = k.toLowerCase().replace(/[\s\._]/g, '');
+    const foundKey = Object.keys(row).find(actualKey => {
+      const normalizedActual = actualKey.toLowerCase().replace(/[\s\._]/g, '');
+      return normalizedActual === normalizedK;
+    });
+    if (foundKey) return row[foundKey];
+  }
+  return "";
+};
+
 const App: React.FC = () => {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [masterCategories, setMasterCategories] = useState<{Category: string, SubCategory: string}[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<Filters>({
@@ -74,56 +85,86 @@ const App: React.FC = () => {
     subCategories: [],
   });
 
-  // Fetch data on mount
-  useEffect(() => {
-    const fetchData = async () => {
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Fetch Inventory Data
+      const invResponse = await fetch(GOOGLE_SHEET_CONFIG.INVENTORY_DATA_URL);
+      if (!invResponse.ok) throw new Error(`Inventory sheet access denied (${invResponse.status})`);
+      const invText = await invResponse.text();
+      const rawInv = parseCSV(invText);
+
+      const mappedInv: InventoryItem[] = rawInv.map(row => ({
+        Date: getVal(row, ['Date']),
+        ModelYear: parseInt(getVal(row, ['Model Year', 'ModelYear']) || '0'),
+        Category: getVal(row, ['Category', 'Cat']) || 'Uncategorized',
+        SubCategory: getVal(row, ['Sub Category', 'SubCategory']) || 'General',
+        Grade: getVal(row, ['Grade', 'Class']),
+        Subject: getVal(row, ['Subject', 'Sub']),
+        NoOfSets: parseInt(getVal(row, ['No. of sets', 'NoOfSets', 'Count']) || '0'),
+        Type: (getVal(row, ['Type']) || 'IN').toUpperCase() as any,
+        Description: getVal(row, ['Description', 'Note']),
+        Count: parseInt(getVal(row, ['Count', 'Total', 'No. of sets']) || '0')
+      }));
+
+      // Fetch Master Details for filters
+      let masterData: {Category: string, SubCategory: string}[] = [];
       try {
-        setLoading(true);
-        const response = await fetch(GOOGLE_SHEET_CONFIG.INVENTORY_DATA_URL);
-        if (!response.ok) throw new Error('Failed to fetch data');
-        const csvText = await response.text();
-        const parsed = parseCSV(csvText);
-        
-        // Map parsed CSV items to InventoryItem type
-        const items: InventoryItem[] = parsed.map(item => ({
-          ...item,
-          Count: Number(item.Count || item.NoOfSets || 0),
-          ModelYear: Number(item.ModelYear || 0),
-          NoOfSets: Number(item.NoOfSets || 0),
-          Grade: String(item.Grade || '')
-        }));
-
-        setInventory(items.length > 0 ? items : MOCK_INVENTORY_DATA);
-        setError(null);
-      } catch (err) {
-        console.error('Error fetching inventory:', err);
-        setInventory(MOCK_INVENTORY_DATA); // Fallback to mock data for demo
-        setError('Working in Demo Mode - Connection to spreadsheet failed.');
-      } finally {
-        setLoading(false);
+        const masterResponse = await fetch(GOOGLE_SHEET_CONFIG.MASTER_DETAILS_URL);
+        if (masterResponse.ok) {
+          const masterText = await masterResponse.text();
+          masterData = parseCSV(masterText).map(row => ({
+            Category: getVal(row, ['Category', 'Cat']),
+            SubCategory: getVal(row, ['Sub Category', 'SubCategory'])
+          })).filter(item => item.Category);
+        }
+      } catch (e) {
+        console.warn("Master sheet could not be loaded, using inventory for filters.");
       }
-    };
 
-    fetchData();
+      setInventory(mappedInv.length > 0 ? mappedInv : MOCK_INVENTORY_DATA);
+      setMasterCategories(masterData);
+      
+      if (mappedInv.length === 0 && masterData.length === 0) {
+        setError("Connection successful, but no data was found in your sheets.");
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError(`Sync Error: ${err.message}. Showing Demo Data.`);
+      setInventory(MOCK_INVENTORY_DATA);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  // Compute unique categories for filters
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
   const allCategories = useMemo(() => {
-    const cats = new Set(inventory.map(item => item.Category));
+    // Combine categories from both inventory and master sheet
+    const cats = new Set([
+      ...inventory.map(i => i.Category),
+      ...masterCategories.map(m => m.Category)
+    ]);
     return Array.from(cats).filter(Boolean).sort();
-  }, [inventory]);
+  }, [inventory, masterCategories]);
 
-  // Compute subcategories based on selected categories
   const allSubCategories = useMemo(() => {
-    const subs = new Set(
-      inventory
-        .filter(item => filters.categories.length === 0 || filters.categories.includes(item.Category))
-        .map(item => item.SubCategory)
-    );
+    const selectedCats = filters.categories;
+    const subs = new Set([
+      ...inventory
+        .filter(i => selectedCats.length === 0 || selectedCats.includes(i.Category))
+        .map(i => i.SubCategory),
+      ...masterCategories
+        .filter(m => selectedCats.length === 0 || selectedCats.includes(m.Category))
+        .map(m => m.SubCategory)
+    ]);
     return Array.from(subs).filter(Boolean).sort();
-  }, [inventory, filters.categories]);
+  }, [inventory, masterCategories, filters.categories]);
 
-  // Aggregate and filter data for display
   const filteredAndGrouped = useMemo(() => {
     const filtered = inventory.filter(item => {
       const catMatch = filters.categories.length === 0 || filters.categories.includes(item.Category);
@@ -131,54 +172,63 @@ const App: React.FC = () => {
       return catMatch && subMatch;
     });
 
-    const aggregated: Record<string, number> = {};
-    filtered.forEach(item => {
-      const key = `${item.Category}|${item.SubCategory}|${item.Grade}|${item.Subject}`;
-      const change = item.Type === 'IN' ? item.Count : -item.Count;
-      aggregated[key] = (aggregated[key] || 0) + change;
-    });
-
     const groups: Record<string, GroupedInventory> = {};
-    Object.entries(aggregated).forEach(([key, totalCount]) => {
-      const [cat, sub, grade, subject] = key.split('|');
-      const groupKey = `${cat}|${sub}|${grade}`;
-      
+    filtered.forEach(item => {
+      const groupKey = `${item.Category}|${item.SubCategory}|${item.Grade}`;
       if (!groups[groupKey]) {
         groups[groupKey] = {
-          category: cat,
-          subCategory: sub,
-          grade: grade,
+          category: item.Category,
+          subCategory: item.SubCategory,
+          grade: item.Grade,
           subjects: {}
         };
       }
-      groups[groupKey].subjects[subject] = totalCount;
+      const change = item.Type === 'OUT' ? -item.Count : item.Count;
+      groups[groupKey].subjects[item.Subject] = (groups[groupKey].subjects[item.Subject] || 0) + change;
     });
 
-    return Object.values(groups);
+    return Object.values(groups).sort((a, b) => String(a.grade).localeCompare(String(b.grade)));
   }, [inventory, filters]);
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 sm:p-8">
       <div className="max-w-7xl mx-auto">
-        <header className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="bg-indigo-600 p-2 rounded-lg">
-              <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
+        <header className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="bg-indigo-600 p-2 rounded-lg shadow-lg shadow-indigo-200">
+                <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+              </div>
+              <h1 className="text-3xl font-black text-slate-800 tracking-tight">TopScore Inventory</h1>
             </div>
-            <h1 className="text-3xl font-black text-slate-800 tracking-tight">Inventory Tracker</h1>
+            <p className="text-slate-500 font-medium">Monitoring stock levels across grades and subjects.</p>
           </div>
-          <p className="text-slate-500 font-medium">Real-time stock monitoring and distribution management.</p>
-          {error && (
-            <div className="mt-4 p-3 bg-amber-50 border border-amber-200 text-amber-700 text-sm rounded-lg flex items-center gap-2">
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-              </svg>
-              {error}
-            </div>
-          )}
+          
+          <button 
+            onClick={fetchData}
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all active:scale-95 disabled:opacity-50"
+          >
+            <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Refresh Data
+          </button>
         </header>
+
+        {error && (
+          <div className="mb-8 p-4 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-2xl flex items-start gap-3">
+            <svg className="w-5 h-5 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <div>
+              <p className="font-bold">System Status</p>
+              <p>{error}</p>
+            </div>
+          </div>
+        )}
 
         <FilterBar 
           allCategories={allCategories} 
@@ -188,25 +238,31 @@ const App: React.FC = () => {
         />
 
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-20">
+          <div className="flex flex-col items-center justify-center py-32">
             <div className="w-12 h-12 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
-            <p className="text-slate-500 font-bold animate-pulse">Loading Inventory Data...</p>
+            <p className="text-slate-400 font-bold tracking-widest uppercase text-xs">Synchronizing with Sheets...</p>
           </div>
         ) : filteredAndGrouped.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {filteredAndGrouped.map((group, idx) => (
               <InventoryTile key={`${group.category}-${group.subCategory}-${group.grade}-${idx}`} data={group} />
             ))}
           </div>
         ) : (
-          <div className="bg-white rounded-2xl p-12 text-center border-2 border-dashed border-slate-200">
-            <div className="bg-slate-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-              </svg>
-            </div>
-            <h2 className="text-xl font-bold text-slate-700 mb-2">No inventory items found</h2>
-            <p className="text-slate-500">Try adjusting your filters or check the source data.</p>
+          <div className="bg-white rounded-3xl p-20 text-center border-2 border-dashed border-slate-200">
+             <div className="bg-slate-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
+                <svg className="w-10 h-10 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                </svg>
+             </div>
+             <h2 className="text-2xl font-bold text-slate-800 mb-2">No Records Displayed</h2>
+             <p className="text-slate-500 max-w-sm mx-auto">Adjust your filters or verify the Category/Sub Category columns in your spreadsheet.</p>
+             <button 
+               onClick={() => setFilters({categories:[], subCategories:[]})}
+               className="mt-8 px-6 py-2 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition-colors"
+             >
+               Clear Filters
+             </button>
           </div>
         )}
       </div>
