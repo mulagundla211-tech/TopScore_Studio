@@ -8,57 +8,416 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- React & Babel for In-Browser Compilation -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
     <style>
         body { font-family: 'Inter', sans-serif; margin: 0; padding: 0; }
-        #bootstrap-error { 
-            display: none; 
-            padding: 24px; 
-            background: #fff1f2; 
-            color: #9f1239; 
-            border: 1px solid #fda4af; 
-            margin: 20px; 
-            border-radius: 12px; 
-            font-family: ui-sans-serif, system-ui, sans-serif;
-            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
-        }
+        /* Custom scrollbar for filters */
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 20px; }
     </style>
 <script type="importmap">
 {
   "imports": {
-    "react": "https://esm.sh/react@19.0.0",
-    "react-dom": "https://esm.sh/react-dom@19.0.0",
-    "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
-    "@google/genai": "https://esm.sh/@google/genai",
-    "react/": "https://esm.sh/react@^19.2.4/",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.4/"
+    "react": "https://esm.sh/react@^19.2.4",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "react/": "https://esm.sh/react@^19.2.4/"
   }
 }
 </script>
-<script>
-    console.log("HTML: System initializing...");
-    window.onerror = function(msg, url, line, col, error) {
-        console.error("BOOTSTRAP ERROR:", msg);
-        var div = document.getElementById('bootstrap-error');
-        if (div) {
-            div.style.display = 'block';
-            div.innerHTML = '<h3 style="margin-top:0;font-weight:700">Application Failed to Start</h3>' +
-                            '<p style="margin-bottom:8px">' + msg + '</p>' +
-                            '<p style="font-size:12px; color: #666;">Note: If you see a MIME type error, the <strong>_headers</strong> file is missing or has not been processed by your host yet.</p>';
-        }
-        return false;
-    };
-</script>
 </head>
 <body class="bg-slate-50 text-slate-900">
-    <div id="bootstrap-error"></div>
-    <div id="root">
-        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; color: #64748b; background: #f8fafc;">
-            <div style="width: 48px; height: 48px; border: 4px solid #e2e8f0; border-top-color: #4f46e5; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
-            <p style="margin-top: 20px; font-weight: 700; font-family: sans-serif; letter-spacing: -0.01em; color: #1e293b;">Initializing Dashboard...</p>
-            <p style="margin-top: 8px; font-size: 13px; color: #94a3b8; font-family: sans-serif;">Synchronizing with Google Sheets</p>
-        </div>
-    </div>
-    <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
-    <script type="module" src="./index.tsx"></script>
+    <div id="root"></div>
+
+    <script type="text/babel" data-presets="react,typescript">
+        const { useState, useEffect, useMemo, useCallback, useRef } = React;
+        const { createRoot } = ReactDOM;
+
+        // --- CONFIGURATION ---
+        const GOOGLE_SHEET_CONFIG = {
+            // Note: This URL must be the "Published to Web" CSV link
+            INVENTORY_DATA_URL: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTwOGiMzcx_FaF5cFRxIfLjOgXZWdWD4pXSYNZyae5D9NYO8icy6zcHtQnV7IRwpHS6IeiWLNMfOCPc/pub?gid=0&single=true&output=csv',
+            MASTER_DETAILS_URL: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTwOGiMzcx_FaF5cFRxIfLjOgXZWdWD4pXSYNZyae5D9NYO8icy6zcHtQnV7IRwpHS6IeiWLNMfOCPc/pub?gid=541343396&single=true&output=csv'
+        };
+
+        // --- CONSTANTS & MOCK DATA ---
+        const MOCK_INVENTORY_DATA = [
+            { Date: '2023-10-01', ModelYear: 2024, Category: 'Workbooks', SubCategory: 'Mathematics', Grade: '1', Subject: 'Addition Basic', NoOfSets: 50, Type: 'IN', Description: 'Initial Stock', Count: 50 },
+            { Date: '2023-10-02', ModelYear: 2024, Category: 'Workbooks', SubCategory: 'Mathematics', Grade: '1', Subject: 'Subtraction Basic', NoOfSets: 40, Type: 'IN', Description: 'Initial Stock', Count: 40 },
+            { Date: '2023-10-05', ModelYear: 2024, Category: 'Workbooks', SubCategory: 'Mathematics', Grade: '1', Subject: 'Addition Basic', NoOfSets: 10, Type: 'OUT', Description: 'Sales', Count: 10 },
+            { Date: '2023-10-01', ModelYear: 2024, Category: 'Textbooks', SubCategory: 'English', Grade: '5', Subject: 'Grammar Pro', NoOfSets: 100, Type: 'IN', Description: 'Bulk Entry', Count: 100 },
+            { Date: '2023-10-10', ModelYear: 2024, Category: 'Textbooks', SubCategory: 'English', Grade: '5', Subject: 'Literature Plus', NoOfSets: 60, Type: 'IN', Description: 'Bulk Entry', Count: 60 },
+            { Date: '2023-10-12', ModelYear: 2024, Category: 'Reference', SubCategory: 'Atlas', Grade: 'All', Subject: 'World Geography', NoOfSets: 25, Type: 'IN', Description: 'Stock', Count: 25 },
+        ];
+
+        // --- COMPONENTS ---
+
+        const MultiSelect = ({ label, options, selected, onChange, disabled }) => {
+            const [isOpen, setIsOpen] = useState(false);
+            const containerRef = useRef(null);
+
+            useEffect(() => {
+                const handleClickOutside = (event) => {
+                    if (containerRef.current && !containerRef.current.contains(event.target)) {
+                        setIsOpen(false);
+                    }
+                };
+                document.addEventListener('mousedown', handleClickOutside);
+                return () => document.removeEventListener('mousedown', handleClickOutside);
+            }, []);
+
+            const isAllSelected = selected.length === 0;
+
+            const handleToggle = (opt) => {
+                if (selected.includes(opt)) {
+                    onChange(selected.filter((s) => s !== opt));
+                } else {
+                    onChange([...selected, opt]);
+                }
+            };
+
+            const handleSelectAll = () => {
+                onChange([]);
+                setIsOpen(false);
+            };
+
+            return (
+                <div ref={containerRef} className={`flex-1 min-w-[200px] sm:min-w-[240px] ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 px-1">
+                        {label}
+                    </label>
+                    <div className="relative">
+                        <button
+                            onClick={() => setIsOpen(!isOpen)}
+                            className={`w-full flex items-center justify-between gap-2 p-3 bg-white border rounded-xl min-h-[48px] transition-all text-left ${isOpen ? 'border-indigo-500 ring-2 ring-indigo-500/10' : 'border-slate-200 hover:border-slate-300'}`}
+                        >
+                            <div className="flex flex-wrap gap-1 items-center overflow-hidden">
+                                {isAllSelected ? (
+                                    <span className="text-sm text-slate-400 font-medium italic">All Selected</span>
+                                ) : (
+                                    <div className="flex gap-1 overflow-hidden">
+                                        <span className="bg-indigo-600 text-white text-[11px] font-bold px-2 py-0.5 rounded-lg whitespace-nowrap">
+                                            {selected.length} Selected
+                                        </span>
+                                        <span className="text-xs text-slate-500 truncate max-w-[120px]">
+                                            {selected.join(', ')}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                            <svg className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </button>
+                        
+                        {isOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-200 rounded-xl shadow-2xl z-50 max-h-64 overflow-y-auto scrollbar-thin">
+                                <div 
+                                    onClick={handleSelectAll}
+                                    className={`px-4 py-3 text-sm cursor-pointer hover:bg-slate-50 border-b border-slate-100 flex items-center justify-between font-semibold ${selected.length === 0 ? 'text-indigo-600 bg-indigo-50/50' : 'text-slate-600'}`}
+                                >
+                                    <span>All {label}s</span>
+                                    {selected.length === 0 && <span className="text-indigo-600 font-bold">✓</span>}
+                                </div>
+                                {options.length > 0 ? (
+                                    options.map((opt) => (
+                                        <div
+                                            key={opt}
+                                            onClick={() => handleToggle(opt)}
+                                            className={`px-4 py-3 text-sm cursor-pointer hover:bg-slate-50 flex items-center justify-between border-b border-slate-50 last:border-0 ${selected.includes(opt) ? 'text-indigo-600 bg-indigo-50/50 font-medium' : 'text-slate-600'}`}
+                                        >
+                                            <span className="truncate pr-4">{opt}</span>
+                                            <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${selected.includes(opt) ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-300'}`}>
+                                                {selected.includes(opt) && <span className="text-[10px] font-bold leading-none">✓</span>}
+                                            </div>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <div className="px-4 py-3 text-xs text-slate-400 italic text-center">No options available</div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const FilterBar = ({ allCategories, allSubCategories, filters, onFilterChange }) => {
+            const handleCategoryChange = (selected) => {
+                onFilterChange({ ...filters, categories: selected, subCategories: [] });
+            };
+            const handleSubCategoryChange = (selected) => {
+                onFilterChange({ ...filters, subCategories: selected });
+            };
+            const clearAll = () => {
+                onFilterChange({ categories: [], subCategories: [] });
+            };
+
+            return (
+                <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-wrap gap-4 items-end mb-8">
+                    <MultiSelect label="Category" options={allCategories} selected={filters.categories} onChange={handleCategoryChange} />
+                    <MultiSelect label="Sub Category" options={allSubCategories} selected={filters.subCategories} onChange={handleSubCategoryChange} disabled={allCategories.length === 0} />
+                    <button onClick={clearAll} className="h-[48px] px-6 text-sm font-bold text-slate-500 hover:text-indigo-600 bg-slate-50 hover:bg-indigo-50 rounded-xl transition-all border border-slate-200 hover:border-indigo-100 flex items-center gap-2 whitespace-nowrap">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                        Reset Filters
+                    </button>
+                </div>
+            );
+        };
+
+        const InventoryTile = ({ data }) => {
+            return (
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow">
+                    <div className="bg-indigo-50 px-4 py-3 border-b border-indigo-100">
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <h3 className="text-xs font-bold text-indigo-700 uppercase tracking-wide">{data.category}</h3>
+                                <p className="text-sm font-semibold text-slate-700">{data.subCategory}</p>
+                            </div>
+                            <div className="bg-white px-2 py-1 rounded-md border border-indigo-200">
+                                <span className="text-[10px] text-slate-500 uppercase font-bold block leading-none">Grade</span>
+                                <span className="text-lg font-black text-indigo-600 leading-tight">{data.grade}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="p-4">
+                        <div className="space-y-3">
+                            {Object.entries(data.subjects).map(([subject, count]) => (
+                                <div key={subject} className="flex justify-between items-center group">
+                                    <span className="text-sm text-slate-600 group-hover:text-slate-900 transition-colors font-medium">{subject}</span>
+                                    <span className="text-sm font-bold text-slate-800 tabular-nums bg-slate-100 px-2 py-0.5 rounded-full">
+                                        {count.toLocaleString()}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- CSV PARSING UTILS ---
+        const parseCSV = (csvText) => {
+            const cleanText = csvText.replace(/^\uFEFF/, '').trim();
+            if (!cleanText) return [];
+            
+            const rows = [];
+            let currentRow = "";
+            let inQuotes = false;
+
+            for (let i = 0; i < cleanText.length; i++) {
+                const char = cleanText[i];
+                if (char === '"') inQuotes = !inQuotes;
+                if ((char === '\n' || char === '\r') && !inQuotes) {
+                    if (currentRow.trim()) rows.push(currentRow);
+                    currentRow = "";
+                    if (char === '\r' && cleanText[i+1] === '\n') i++;
+                } else {
+                    currentRow += char;
+                }
+            }
+            if (currentRow.trim()) rows.push(currentRow);
+            if (rows.length < 2) return [];
+
+            const splitFields = (line) => {
+                const fields = [];
+                let field = "";
+                let inside = false;
+                for (let i = 0; i < line.length; i++) {
+                    const c = line[i];
+                    if (c === '"') inside = !inside;
+                    else if (c === ',' && !inside) {
+                        fields.push(field.trim());
+                        field = "";
+                    } else {
+                        field += c;
+                    }
+                }
+                fields.push(field.trim());
+                return fields;
+            };
+
+            const rawHeaders = splitFields(rows[0]).map(h => h.replace(/^"|"$/g, '').trim());
+            return rows.slice(1).map(row => {
+                const values = splitFields(row);
+                const obj = {};
+                rawHeaders.forEach((header, i) => {
+                    obj[header] = values[i] ? values[i].replace(/^"|"$/g, '').trim() : "";
+                });
+                return obj;
+            });
+        };
+
+        const getVal = (row, keys) => {
+            for (const k of keys) {
+                if (row[k] !== undefined && row[k] !== null && row[k] !== "") return row[k];
+                const normalizedK = k.toLowerCase().replace(/[\s\._]/g, '');
+                const foundKey = Object.keys(row).find(actualKey => {
+                    const normalizedActual = actualKey.toLowerCase().replace(/[\s\._]/g, '');
+                    return normalizedActual === normalizedK;
+                });
+                if (foundKey && row[foundKey] !== undefined && row[foundKey] !== null && row[foundKey] !== "") return row[foundKey];
+            }
+            return "";
+        };
+
+        // --- MAIN APP COMPONENT ---
+        const App = () => {
+            const [inventory, setInventory] = useState([]);
+            const [masterCategories, setMasterCategories] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            const [filters, setFilters] = useState({ categories: [], subCategories: [] });
+
+            const fetchData = useCallback(async () => {
+                try {
+                    setLoading(true);
+                    setError(null);
+                    
+                    const invResponse = await fetch(GOOGLE_SHEET_CONFIG.INVENTORY_DATA_URL);
+                    if (!invResponse.ok) throw new Error(`Network failure: HTTP ${invResponse.status}`);
+                    const invText = await invResponse.text();
+                    
+                    if (invText.trim().toLowerCase().startsWith('<!doctype html')) {
+                        throw new Error("Access Denied: The Google Sheet must be published to the web as a CSV.");
+                    }
+
+                    const rawInv = parseCSV(invText);
+                    const mappedInv = rawInv.map(row => {
+                        const typeRaw = getVal(row, ['Type', 'In/Out', 'Movement']) || 'IN';
+                        const typeNormalized = typeRaw.toUpperCase().includes('OUT') ? 'OUT' : 'IN';
+                        return {
+                            Date: getVal(row, ['Date', 'EntryDate']),
+                            ModelYear: parseInt(getVal(row, ['Model Year', 'ModelYear', 'Year']) || '0'),
+                            Category: getVal(row, ['Category', 'Cat', 'Genre']) || 'Uncategorized',
+                            SubCategory: getVal(row, ['Sub Category', 'SubCategory', 'Sub']) || 'General',
+                            Grade: getVal(row, ['Grade', 'Class', 'Level']),
+                            Subject: getVal(row, ['Subject', 'Sub', 'Title', 'Topic']),
+                            NoOfSets: parseInt(getVal(row, ['No. of sets', 'NoOfSets', 'Count', 'Qty']) || '0'),
+                            Type: typeNormalized,
+                            Description: getVal(row, ['Description', 'Note', 'Comment']),
+                            Count: parseInt(getVal(row, ['Count', 'Total', 'Qty', 'No. of sets']) || '0')
+                        };
+                    });
+
+                    let masterData = [];
+                    try {
+                        const masterResponse = await fetch(GOOGLE_SHEET_CONFIG.MASTER_DETAILS_URL);
+                        if (masterResponse.ok) {
+                            const masterText = await masterResponse.text();
+                            if (!masterText.trim().toLowerCase().startsWith('<!doctype html')) {
+                                masterData = parseCSV(masterText).map(row => ({
+                                    Category: getVal(row, ['Category', 'Cat']),
+                                    SubCategory: getVal(row, ['Sub Category', 'SubCategory'])
+                                })).filter(item => item.Category);
+                            }
+                        }
+                    } catch (e) { console.warn("Master skipped", e); }
+
+                    setInventory(mappedInv.length > 0 ? mappedInv : MOCK_INVENTORY_DATA);
+                    setMasterCategories(masterData);
+                } catch (err) {
+                    console.error("Sync Error", err);
+                    setError(err.message);
+                    setInventory(MOCK_INVENTORY_DATA);
+                } finally {
+                    setLoading(false);
+                }
+            }, []);
+
+            useEffect(() => { fetchData(); }, [fetchData]);
+
+            const allCategories = useMemo(() => {
+                const cats = new Set([...inventory.map(i => i.Category), ...masterCategories.map(m => m.Category)]);
+                return Array.from(cats).filter(Boolean).sort();
+            }, [inventory, masterCategories]);
+
+            const allSubCategories = useMemo(() => {
+                const selectedCats = filters.categories;
+                const subs = new Set([
+                    ...inventory.filter(i => selectedCats.length === 0 || selectedCats.includes(i.Category)).map(i => i.SubCategory),
+                    ...masterCategories.filter(m => selectedCats.length === 0 || selectedCats.includes(m.Category)).map(m => m.SubCategory)
+                ]);
+                return Array.from(subs).filter(Boolean).sort();
+            }, [inventory, masterCategories, filters.categories]);
+
+            const filteredAndGrouped = useMemo(() => {
+                const filtered = inventory.filter(item => {
+                    const catMatch = filters.categories.length === 0 || filters.categories.includes(item.Category);
+                    const subMatch = filters.subCategories.length === 0 || filters.subCategories.includes(item.SubCategory);
+                    return catMatch && subMatch;
+                });
+                const groups = {};
+                filtered.forEach(item => {
+                    const groupKey = `${item.Category}|${item.SubCategory}|${item.Grade}`;
+                    if (!groups[groupKey]) groups[groupKey] = { category: item.Category, subCategory: item.SubCategory, grade: item.Grade, subjects: {} };
+                    const change = item.Type === 'OUT' ? -item.Count : item.Count;
+                    groups[groupKey].subjects[item.Subject] = (groups[groupKey].subjects[item.Subject] || 0) + change;
+                });
+                return Object.values(groups).sort((a, b) => String(a.grade).localeCompare(String(b.grade), undefined, { numeric: true }));
+            }, [inventory, filters]);
+
+            return (
+                <div className="min-h-screen bg-slate-50 p-4 sm:p-8">
+                    <div className="max-w-7xl mx-auto">
+                        <header className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            <div>
+                                <div className="flex items-center gap-3 mb-2">
+                                    <div className="bg-indigo-600 p-2 rounded-lg shadow-lg">
+                                        <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+                                    </div>
+                                    <h1 className="text-3xl font-black text-slate-800 tracking-tight">TopScore Inventory</h1>
+                                </div>
+                                <p className="text-slate-500 font-medium">Real-time inventory management dashboard.</p>
+                            </div>
+                            <button onClick={fetchData} disabled={loading} className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all active:scale-95 disabled:opacity-50 shadow-md shadow-indigo-200">
+                                <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                Refresh Data
+                            </button>
+                        </header>
+
+                        {error && (
+                            <div className="mb-8 p-4 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-2xl flex items-start gap-3">
+                                <svg className="w-5 h-5 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                                <div><p className="font-bold">Sync Issue</p><p className="opacity-80">{error}. Showing demo data.</p></div>
+                            </div>
+                        )}
+
+                        <FilterBar allCategories={allCategories} allSubCategories={allSubCategories} filters={filters} onFilterChange={setFilters} />
+
+                        {loading ? (
+                            <div className="flex flex-col items-center justify-center py-32">
+                                <div className="w-12 h-12 border-4 border-slate-200 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
+                                <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Syncing spreadsheet...</p>
+                            </div>
+                        ) : filteredAndGrouped.length > 0 ? (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                                {filteredAndGrouped.map((group, idx) => (
+                                    <InventoryTile key={`${group.category}-${group.subCategory}-${group.grade}-${idx}`} data={group} />
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="bg-white rounded-3xl p-20 text-center border border-slate-200 shadow-sm">
+                                <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4"><svg className="w-8 h-8 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" /></svg></div>
+                                <h2 className="text-2xl font-bold text-slate-800 mb-2">Empty Selection</h2>
+                                <p className="text-slate-500">No inventory records match your current filters.</p>
+                                <button onClick={() => setFilters({categories:[], subCategories:[]})} className="mt-4 text-indigo-600 font-bold text-sm hover:underline">Clear all filters</button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
 </body>
 </html>
