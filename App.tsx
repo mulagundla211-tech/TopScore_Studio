@@ -84,17 +84,17 @@ const App: React.FC = () => {
   });
 
   const fetchData = useCallback(async () => {
-    console.log("App: Starting data fetch...");
+    console.log("App: Fetching live data...");
     try {
       setLoading(true);
       setError(null);
 
       const invResponse = await fetch(GOOGLE_SHEET_CONFIG.INVENTORY_DATA_URL);
-      if (!invResponse.ok) throw new Error(`HTTP ${invResponse.status}`);
+      if (!invResponse.ok) throw new Error(`Network failure: HTTP ${invResponse.status}`);
       const invText = await invResponse.text();
       
       if (invText.trim().toLowerCase().startsWith('<!doctype html')) {
-        throw new Error("Published URL is restricted. Ensure 'Publish to Web' as CSV is active.");
+        throw new Error("Access Denied: The Google Sheet must be published to the web as a CSV.");
       }
 
       const rawInv = parseCSV(invText);
@@ -129,15 +129,14 @@ const App: React.FC = () => {
           }
         }
       } catch (e) {
-        console.warn("Master sheet skip.");
+        console.warn("Master detail sync skipped.");
       }
 
       setInventory(mappedInv.length > 0 ? mappedInv : MOCK_INVENTORY_DATA);
       setMasterCategories(masterData);
-      console.log("App: Data sync complete.");
     } catch (err: any) {
       console.error("App: Sync Error", err);
-      setError(`Sync Notice: ${err.message}. Using demo data.`);
+      setError(`${err.message}. Showing cached/demo data.`);
       setInventory(MOCK_INVENTORY_DATA);
     } finally {
       setLoading(false);
@@ -207,29 +206,29 @@ const App: React.FC = () => {
               </div>
               <h1 className="text-3xl font-black text-slate-800 tracking-tight">TopScore Inventory</h1>
             </div>
-            <p className="text-slate-500 font-medium">Cloud-synced inventory tracking.</p>
+            <p className="text-slate-500 font-medium">Real-time inventory management dashboard.</p>
           </div>
           
           <button 
             onClick={fetchData}
             disabled={loading}
-            className="flex items-center gap-2 px-6 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all active:scale-95 disabled:opacity-50"
+            className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all active:scale-95 disabled:opacity-50 shadow-md shadow-indigo-200"
           >
             <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            Sync Now
+            Refresh Data
           </button>
         </header>
 
         {error && (
-          <div className="mb-8 p-4 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-2xl flex items-start gap-3">
-            <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          <div className="mb-8 p-4 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-2xl flex items-start gap-3 animate-in fade-in duration-500">
+            <svg className="w-5 h-5 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
             <div>
-              <p className="font-bold">Sync Notice</p>
-              <p>{error}</p>
+              <p className="font-bold">Sync Issue</p>
+              <p className="opacity-80">{error}</p>
             </div>
           </div>
         )}
@@ -244,18 +243,24 @@ const App: React.FC = () => {
         {loading ? (
           <div className="flex flex-col items-center justify-center py-32">
             <div className="w-12 h-12 border-4 border-slate-200 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
-            <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Loading...</p>
+            <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Syncing spreadsheet...</p>
           </div>
         ) : filteredAndGrouped.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 animate-in slide-in-from-bottom-4 duration-500">
             {filteredAndGrouped.map((group, idx) => (
               <InventoryTile key={`${group.category}-${group.subCategory}-${group.grade}-${idx}`} data={group} />
             ))}
           </div>
         ) : (
-          <div className="bg-white rounded-3xl p-20 text-center border border-slate-200">
-             <h2 className="text-2xl font-bold text-slate-800 mb-2">No Records</h2>
-             <p className="text-slate-500">Check your filters or the source spreadsheet.</p>
+          <div className="bg-white rounded-3xl p-20 text-center border border-slate-200 shadow-sm">
+             <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+               <svg className="w-8 h-8 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+               </svg>
+             </div>
+             <h2 className="text-2xl font-bold text-slate-800 mb-2">Empty Selection</h2>
+             <p className="text-slate-500">No inventory records match your current filters.</p>
+             <button onClick={() => setFilters({categories:[], subCategories:[]})} className="mt-4 text-indigo-600 font-bold text-sm hover:underline">Clear all filters</button>
           </div>
         )}
       </div>
